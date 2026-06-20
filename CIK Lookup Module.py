@@ -1,6 +1,8 @@
 import requests
 
 class SecEdgar:
+
+    # ---MODULE 3---
     def __init__(self, fileurl): # runs automatically when you create a SecEdgar object
         self.fileurl = fileurl # stores the URL so other methods can use it
         self.name_dict = {} # empty dict: will hold title (from CIK data)
@@ -47,10 +49,59 @@ class SecEdgar:
     def ticker_to_cik(self, ticker):
         return self.ticker_dict.get(ticker)
         # (same logic as the 'name_to_cik' method).
+    
+    # ---MODULE 6---
+    def _build_document_url(self, cik, accession_number, primary_document): # this is a private helper method focused on constructing the 10-Q/10-K document URL
+        stripped_accession_number = accession_number.replace('-','') # dashes are stripped in the document URL
+        return f"https://www.sec.gov/Archives/edgar/data/{cik}/{stripped_accession_number}/{primary_document}"
+        
+    def quarterly_filing(self, cik, year, quarter):
+        # step 1: pad CIK to 10 digits and build the URL
+        padded_cik = str(cik).zfill(10) # zfill adds leading zeros to reach 10-digits
+        url = f"https://data.sec.gov/submissions/CIK{padded_cik}.json"
+        headers = {'user-agent': 'MLT MM muhsinmohamed2005@gmail.com'}
+        r = requests.get(url, headers=headers)
+        cik_specific_json = r.json() # building the JSON file for company-specific data
+        recent = cik_specific_json['filings']['recent'] # drilling down in the nested dictionary to the object that contains the data we're interested in (recent)
+        forms = recent['form'] # holds the actual form values from the 'form' array)
+        for i, form in enumerate(forms): # 'enumerate(forms)' gives you both the index (i) AND the value (form) at the same time.
+            if form == '10-Q':
+                report_year = recent['reportDate'][i][:4] # grabbing date at the same index; slices just the year (e.g., "2026" from "2026-03-30")
+                if report_year == str(year):
+                    report_month = recent['reportDate'][i][5:7]
+                    if report_month == '12':
+                        report_quarter = 'Q1'
+                    elif report_month == '03':
+                        report_quarter = 'Q2'
+                    elif report_month == '06':
+                        report_quarter = 'Q3'
+                    elif report_month == '09':
+                        report_quarter = 'Q4'
+                    if report_quarter == str(quarter):
+                        return self._build_document_url(cik, recent['accessionNumber'][i], recent['primaryDocument'][i]) # generates the company-specific 10-Q document URL for the requested year and quarter.
+                        # i tracks the current position across all parallel arrays simultaneously.
+                        # when all conditions match, i points to the correct filing in every array;
+                        # accessionNumber, primaryDocument, etc. are all guaranteed to belong to the same filing.
+        return None # no matching filing found for the given year and quarter.
+    
+    def annual_filing(self, cik, year):
+        padded_cik = str(cik).zfill(10)
+        url = f"https://data.sec.gov/submissions/CIK{padded_cik}.json"
+        headers = {'user-agent': 'MLT MM muhsinmohamed2005@gmail.com'}
+        r = requests.get(url, headers=headers)
+        cik_specific_json = r.json()
+        recent = cik_specific_json['filings']['recent']
+        forms = recent['form']
+        for i, form in enumerate(forms):
+            if form == '10-K':
+                report_year = recent['reportDate'][i][:4]
+                if report_year == str(year):
+                    return self._build_document_url(cik, recent['accessionNumber'][i], recent['primaryDocument'][i])
+        return None
+
 
 se = SecEdgar('https://www.sec.gov/files/company_tickers.json') # creates an actual SecEdgar object using the SEC's EDGAR database (company_tickers URL)
-name_lookup = se.name_to_cik("Apple Inc.")
-ticker_lookup = se.ticker_to_cik("AAPL")
-print(name_lookup)
-print(ticker_lookup)
-# signed: MM - 06/13
+name_lookup = se.name_to_cik("Apple Inc.")[0] # grabs just the CIK number from the tuple
+
+print(se.quarterly_filing(name_lookup, 2024, 'Q2'))
+print(se.annual_filing(name_lookup, 2023))
